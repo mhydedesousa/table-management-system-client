@@ -3,12 +3,13 @@ import { LoginUserDTO, User } from "../interfaces/user";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { loginUser } from "../util/APIUtil";
 import jwt from "jwt-decode";
+import { useNavigate } from "react-router-dom";
 
 interface AuthContextInterface {
   user: User | null;
   loading: boolean;
   error?: any;
-  login: (loginUserDTO: LoginUserDTO) => void;
+  login: (loginUserDTO: LoginUserDTO) => Promise<void>;
   register: (email: string, name: string, password: string) => void;
   logout: () => void;
   refresh: () => void;
@@ -48,6 +49,7 @@ export const AuthContextProvider = ({ children, ...props }: Props) => {
     } catch (e) {
       console.log(e);
       setLoading(false);
+      throw e;
     }
   };
 

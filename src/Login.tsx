@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useEffect } from "react";
 import "./App.css";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AuthContext } from "./contexts/AuthContext";
@@ -6,15 +6,22 @@ import { Form, Input, Button } from "antd";
 import "./Login.css";
 
 function Login() {
-  const { login } = useContext(AuthContext);
   const navigate = useNavigate();
-  const { user, loading } = useContext(AuthContext);
+  const { user, login, loading } = useContext(AuthContext);
 
   const onFinish = async (values: any) => {
-    login({ email: values.email, password: values.password });
-    navigate("/");
+    try {
+      await login({ email: values.email, password: values.password });
+    } catch (e: any) {
+      // handle error
+      alert(e.message);
+    }
   };
-
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [user]);
   const onFinishFailed = (error: any) => {
     console.log("Failed:", error);
   };

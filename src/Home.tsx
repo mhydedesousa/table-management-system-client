@@ -1,22 +1,26 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-import { Button, Space, Table, Row, Col, Modal, Form, Input } from "antd";
+import { Button, Space, Table, Row } from "antd";
 import {
   addToTable,
   deleteFromTable,
   getTableInfo,
   getTables,
 } from "./util/APIUtil";
+import FormModal from "./components/FormModal";
 
 function Home() {
   const [tables, setTables] = useState([]);
-  const [tableSchema, setTableSchema] = useState([]);
+  const [tableSchema, setTableSchema] = useState<any[]>([]);
   const [tableData, setTableData] = useState([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState<boolean[]>([]);
-  const [addLoading, setAddLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+
+  const [loadingForm, setLoadingForm] = useState(false);
+  const [fields, setFields] = useState([]);
 
   useEffect(() => {
     getTables()
@@ -58,9 +62,68 @@ function Home() {
   };
 
   const renderAdd = () => {
-    const handleClick = () => {
+    const handleClick = async () => {
       setShowModal(true);
+
+      setLoadingForm(true);
+      const fieldsArr: any = [];
+      const loadedData: any = [];
+      for (const col of tableSchema) {
+        if (col.column_name !== "id") {
+          // if no referenced table, then this will be a simple Input
+          if (!col.referenced_table_name) {
+            fieldsArr.push({ info: col });
+          } else {
+            // otherwise, check if loaded the table already and set up options for a <Select/>
+            const existingDataInLoadedData = loadedData.find(
+              (x: any) => x.name === col.referenced_table_name
+            );
+
+            if (existingDataInLoadedData) {
+              fieldsArr.push({
+                info: col,
+                options: existingDataInLoadedData.data.map((x: any) => {
+                  const label = Object.hasOwn(x, "name")
+                    ? x["name"]
+                    : x[col.referenced_column_name];
+                  return {
+                    value: x[col.referenced_column_name],
+                    label: label,
+                  };
+                }),
+              });
+            } else {
+              try {
+                const response = await getTableInfo(col.referenced_table_name!);
+                loadedData.push({
+                  data: response.data,
+                  name: col.referenced_table_name,
+                });
+
+                fieldsArr.push({
+                  info: col,
+                  options: response.data.map((x: any) => {
+                    const label = Object.hasOwn(x, "name")
+                      ? x["name"]
+                      : x[col.referenced_column_name];
+                    return {
+                      value: x[col.referenced_column_name],
+                      label: label,
+                    };
+                  }),
+                });
+              } catch (e) {
+                console.log(e);
+              }
+            }
+          }
+        }
+      }
+
+      setFields(fieldsArr);
+      setLoadingForm(false);
     };
+
     return (
       <Button style={{ marginBottom: 24 }} type="primary" onClick={handleClick}>
         Add
@@ -68,82 +131,34 @@ function Home() {
     );
   };
 
-  const renderModal = () => {
-    const setUpFormItems = () => {
-      return tableSchema.map((x: any) => {
-        if (x.column_name === "id") return <></>;
-        return (
-          <Form.Item
-            label={x.column_name}
-            name={x.column_name}
-            rules={[
-              {
-                required: x.is_nullable === "NO",
-                message: `${x.column_name} is required`,
-              },
-            ]}
-          >
-            <Input disabled={addLoading} />
-          </Form.Item>
-        );
+  const onFinish = (values: any) => {
+    setSubmitLoading(true);
+    addToTable(selectedTable!, values)
+      .then((response) => {
+        getTableInfo(selectedTable!)
+          .then((response) => {
+            setTableSchema(response.schema);
+            setTableData(response.data);
+            setSubmitLoading(false);
+            setShowModal(false);
+          })
+          .catch((e) => {
+            console.log(e);
+            setSubmitLoading(false);
+          });
+      })
+      .catch((e) => {
+        console.log(e);
+        setSubmitLoading(false);
+      })
+      .finally(() => {
+        setLoading(false);
       });
-    };
-    const onFinish = (values: any) => {
-      setAddLoading(true);
-      addToTable(selectedTable!, values)
-        .then((response) => {
-          getTableInfo(selectedTable!)
-            .then((response) => {
-              setTableSchema(response.schema);
-              setTableData(response.data);
-              setAddLoading(false);
-              setShowModal(false);
-            })
-            .catch((e) => {
-              console.log(e);
-              setAddLoading(false);
-            });
-        })
-        .catch((e) => {
-          console.log(e);
-          setAddLoading(false);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-      setShowModal(false);
-    };
-    const onFinishFailed = (error: any) => {
-      console.log("Failed:", error);
-    };
-    return (
-      <Modal
-        open={showModal}
-        okButtonProps={{ style: { display: "none" } }}
-        cancelButtonProps={{ style: { display: "none" } }}
-        onCancel={() => setShowModal(false)}
-      >
-        <div style={{ padding: 24 }}>
-          <Form
-            name="add"
-            labelCol={{ span: 8 }}
-            wrapperCol={{ span: 16 }}
-            initialValues={{ remember: true }}
-            onFinish={onFinish}
-            onFinishFailed={onFinishFailed}
-            autoComplete="off"
-          >
-            {setUpFormItems()}
+    setShowModal(false);
+  };
 
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={addLoading}>
-                Add
-              </Button>
-            </Form.Item>
-          </Form>
-        </div>
-      </Modal>
-    );
+  const onFinishFailed = (error: any) => {
+    console.log("Failed:", error);
   };
 
   const renderTable = () => {
@@ -213,7 +228,15 @@ function Home() {
       {selectedTable && (
         <>
           <Row>{renderAdd()}</Row>
-          {renderModal()}
+          <FormModal
+            fields={fields}
+            onFinish={onFinish}
+            onFinishFailed={onFinishFailed}
+            loadingForm={loadingForm}
+            showModal={showModal}
+            setShowModal={setShowModal}
+            submitLoading={submitLoading}
+          />
           {renderTable()}
         </>
       )}
